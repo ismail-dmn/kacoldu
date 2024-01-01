@@ -1,2 +1,0 @@
-# kacoldu
-finans
