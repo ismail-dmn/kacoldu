@@ -60,11 +60,100 @@
     </style>
 </head>
 <body>
+    
     <div class="container">
         <h1>Gizlilik Politikası</h1>
         <p>Bu web sitesinin gizlilik politikası hakkında bilgiler burada yer alacaktır.</p>
         <p>Bu site örneği sadece demonstrasyon amacıyla oluşturulmuştur.</p>
     </div>
     <a href="index.html" id="donmeButonu">Ana Sayfaya Dön</a>
+    <!-- YENİ: Basit Anlık Fiyat Çekici (Döviz + Altın) -->
+<script>
+// Ücretsiz CORS proxy (hızlı, limitsiz)
+const PROXY = 'https://corsproxy.io/?';
+
+function updatePrices() {
+    // 1. Döviz: TCMB Resmi (USD, EUR, GBP vb.)
+    fetch(PROXY + 'https://www.tcmb.gov.tr/kurlar/today.xml')
+    .then(r => r.text())
+    .then(str => {
+        let parser = new DOMParser();
+        let xml = parser.parseFromString(str, "text/xml");
+        
+        const currencies = [
+            {code: 'USD', name: 'USD'},
+            {code: 'EUR', name: 'EUR'},
+            {code: 'GBP', name: 'GBP'},
+            // Diğer dövizler için ekle: {code: 'CHF', name: 'CHF'}, vb.
+        ];
+        
+        currencies.forEach(cur => {
+            let buy = xml.querySelector(`Currency[Kod="${cur.name}"] ForexBuying`)?.textContent || 'N/A';
+            let sell = xml.querySelector(`Currency[Kod="${cur.name}"] ForexSelling`)?.textContent || 'N/A';
+            updateElement(cur.code, buy, sell);
+        });
+    })
+    .catch(() => console.log('TCMB hatası, serbest piyasa fallback'));
+
+    // 2. Serbest Piyasa Fallback + Altın: Bigpara scrape (gerçek anlık)
+    fetch(PROXY + 'https://bigpara.hurriyet.com.tr/api/v1/borsa/altin-doviz-json')
+    .then(r => r.json())
+    .then(data => {
+        // Döviz (serbest piyasa)
+        const dovizMap = { 'USD': 'dolar', 'EUR': 'euro', 'GBP': 'sterlin' };
+        Object.keys(dovizMap).forEach(code => {
+            let item = data.find(i => i.sembol.includes(dovizMap[code]));
+            if (item) updateElement(code, item.alis, item.satis, item.yuzde);
+        });
+        
+        // Altın
+        let gram = data.find(i => i.sembol.includes('gram-altin'));
+        if (gram) updateElement('GA', gram.alis, gram.satis, gram.yuzde);
+        
+        let ceyrek = data.find(i => i.sembol.includes('ceyrek-altin'));
+        if (ceyrek) updateElement('C', ceyrek.alis, ceyrek.satis, ceyrek.yuzde);
+        
+        let cumhuriyet = data.find(i => i.sembol.includes('cumhuriyet-altini'));
+        if (cumhuriyet) updateElement('CMR', cumhuriyet.alis, cumhuriyet.satis, cumhuriyet.yuzde);
+        
+        // Hesaplamalı: Yarım/Tam (çeyrek bazlı)
+        if (ceyrek) {
+            updateElement('Y', (ceyrek.satis * 2).toFixed(2), (ceyrek.satis * 2).toFixed(2)); // Yarım ~2 çeyrek
+            updateElement('T', (ceyrek.satis * 4).toFixed(2), (ceyrek.satis * 4).toFixed(2)); // Tam ~4 çeyrek
+        }
+    })
+    .catch(err => console.error('Bigpara hatası:', err));
+}
+
+// Element güncelle (data-code ile tüm yerleri kapsar)
+function updateElement(code, buy, sell, percent = '') {
+    // Alış
+    document.querySelectorAll(`[data-code="${code}"] .text-primary, [data-code="${code}"] .text-title:nth-child(2)`).forEach(el => el.innerText = buy);
+    // Satış ve genel değerler
+    document.querySelectorAll(`[data-code="${code}"] .currency-value, [data-code="${code}"] .canli, [data-code="${code}"] .text-right > div`).forEach(el => {
+        if (el.innerText.trim() === '0.0' || el.innerText.trim() === '') el.innerText = sell;
+    });
+    // % değişim ve status
+    if (percent) {
+        let statusClass = percent > 0 ? 'status-up' : 'status-down';
+        document.querySelectorAll(`[data-code="${code}"] .currency-ratio, [data-code="${code}"] .status-row div, [data-code="${code}"] .status-up`).forEach(el => {
+            el.innerText = `% ${percent}`;
+            el.className = statusClass;
+        });
+        document.querySelectorAll(`[data-code="${code}"] li, tr`).forEach(el => el.classList.add(statusClass));
+    }
+    // Zaman damgası
+    let now = new Date().toLocaleTimeString('tr-TR');
+    document.querySelectorAll(`[data-code="${code}"] .date span`).forEach(el => el.innerText = now);
+}
+
+// Sayfa yüklendiğinde + her 60 sn'de çalıştır
+document.addEventListener('DOMContentLoaded', updatePrices);
+setInterval(updatePrices, 60000); // 1 dakika
+
+// Manuel yenile butonu
+document.querySelectorAll('.btn-refresh').forEach(btn => btn.addEventListener('click', updatePrices));
+</script>
 </body>
 </html>
+
